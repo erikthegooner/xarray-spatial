@@ -52,12 +52,6 @@ import xarray as xr
 
 from .._helpers.markers import gpu_available, requires_gpu
 
-# Aliased so the per-file ``_gpu_only`` decorators read the same as
-# before the consolidation; the underlying check is the shared
-# ``requires_gpu`` marker.
-_gpu_only = requires_gpu
-needs_cupy = requires_gpu
-
 # A handful of sections additionally gate on optional libraries (tifffile,
 # imagecodecs, nvJPEG, etc.). Those gates layer on top of ``requires_gpu``
 # below; they need separate skipif decorators because the missing-library
@@ -1121,9 +1115,12 @@ def test_cuda_context_survives_after_jpeg_gpu_read_1549(tmp_path):
 # decode path used to discard the mask. These tests confirm the GPU
 # path now matches the CPU path for representative mask combinations.
 
-# Module-level skip: this whole section is LERC-only.
-lerc_lerc = pytest.importorskip("lerc", reason="lerc required for LERC GPU tests")
-
+# LERC is a section-local dependency: importing it at module scope (e.g.
+# via ``pytest.importorskip``) would skip the whole consolidated module
+# on hosts without lerc, dropping the nvCOMP / nvJPEG / predictor / JPEG
+# sections that have no LERC dependency. Gate per-test through
+# ``LERC_AVAILABLE`` instead, and import the ``lerc`` package inside the
+# fixture that actually needs it.
 from xrspatial.geotiff._compression import LERC_AVAILABLE  # noqa: E402
 
 _gpu_only_lerc = pytest.mark.skipif(
@@ -1135,6 +1132,8 @@ _gpu_only_lerc = pytest.mark.skipif(
 @pytest.fixture
 def lerc_writer_with_mask_gpu(monkeypatch):
     """Patch ``lerc_compress`` to embed a valid-mask the writer can't pass."""
+    import lerc as _lerc
+
     holder = {"invalid": None}
 
     def _patched(data, width, height, samples=1,
@@ -1152,7 +1151,7 @@ def lerc_writer_with_mask_gpu(monkeypatch):
             invalid = invalid_pred(arr)
             mask = np.where(invalid, np.uint8(0), np.uint8(1))
             has_mask = True
-        result = lerc_lerc.encode(
+        result = _lerc.encode(
             arr, samples, has_mask, mask, max_z_error, 1,
         )
         if result[0] != 0:
@@ -1738,7 +1737,9 @@ class TestGPUChunkedRejectsMalformedFile_1933:
 
     def test_read_geotiff_gpu_chunked_tiled_raises(self, tmp_path):
         """Tiled chunked path with KvikIO available exercises gpu.py:999."""
-        pytest.importorskip("kvikio")
+        # ``exc_type=ImportError`` silences the pytest >= 8.x deprecation
+        # warning when ``kvikio`` imports but ``libkvikio.so`` is missing.
+        pytest.importorskip("kvikio", exc_type=ImportError)
 
         from xrspatial.geotiff import read_geotiff_gpu
 
