@@ -69,7 +69,7 @@ or:
 AI review: not completed; see explanation below.
 ```
 
-The human contributor’s name, account, and judgment must remain attached to the work.
+The human contributor’s name, account, and judgement must remain attached to the work.
 
 ## Pull request expectations
 
